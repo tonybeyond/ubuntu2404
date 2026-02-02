@@ -1,7 +1,8 @@
-theme = catppuccin-mocha
+theme = Ayu Mirage
 window-decoration = true
 window-theme = auto
-macos-titlebar-style = native
+font-family = ProFont IIx Nerd Font
+font-size = 11
 unfocused-split-opacity = 0.30
 copy-on-select = true
 #unfocused-split-fill = "gray"
