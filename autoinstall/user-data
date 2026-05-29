@@ -1,0 +1,61 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # ── Locale & Keyboard ──────────────────────────────────────────────────────
+  locale: fr_CH.UTF-8
+  keyboard:
+    layout: ch
+    variant: fr
+
+  # ── Identity ───────────────────────────────────────────────────────────────
+  # Générer le hash : echo "tonmotdepasse" | openssl passwd -6 -stdin
+  identity:
+    realname: Tony
+    hostname: tony-ws
+    username: tony
+    password: '$6$CHANGEME$PLEASE_REPLACE_WITH_REAL_HASH'
+
+  # ── SSH ────────────────────────────────────────────────────────────────────
+  ssh:
+    install-server: false
+    allow-pw: false
+
+  # ── Storage (LVM sur le disque le plus grand) ──────────────────────────────
+  storage:
+    layout:
+      name: lvm
+      match:
+        size: largest
+
+  # ── Packages de base (le reste est installé par post-install.sh) ──────────
+  packages:
+    - git
+    - curl
+    - wget
+    - ca-certificates
+
+  # ── Mises à jour ──────────────────────────────────────────────────────────
+  updates: security
+
+  # ── Commandes post-installation ───────────────────────────────────────────
+  # Exécutées dans le chroot /target avant le reboot.
+  # Logs : /var/log/ubuntu2404-setup.log sur le système installé.
+  late-commands:
+    # 1. Cloner le repo dans le système cible
+    - curtin in-target --target=/target -- git clone
+        https://github.com/tonybeyond/ubuntu2404.git /opt/ubuntu2404
+
+    # 2. Setup système (root) — paquets, Ghostty, Vivaldi, Neovim, Oh My Zsh, Citrix
+    - curtin in-target --target=/target -- bash -c
+        "bash /opt/ubuntu2404/scripts/post-install.sh
+         > /var/log/ubuntu2404-setup.log 2>&1"
+
+    # 3. Setup bash user (tony) — ble.sh, Starship, Hack Nerd Font, .bashrc
+    - curtin in-target --target=/target -- bash -c
+        "sudo -u tony HOME=/home/tony
+         bash /opt/ubuntu2404/scripts/bash-setup.sh
+         >> /var/log/ubuntu2404-setup.log 2>&1"
+
+  # ── Redémarrage automatique ────────────────────────────────────────────────
+  shutdown: reboot
