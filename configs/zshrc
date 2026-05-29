@@ -1,0 +1,81 @@
+# ── Oh My Zsh ─────────────────────────────────────────────────────────────────
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="bira"
+
+ENABLE_CORRECTION="true"
+COMPLETION_WAITING_DOTS="true"
+
+plugins=(
+  git
+  fzf
+  vscode
+  z
+  zsh-autosuggestions
+  zsh-autocomplete
+  zsh-syntax-highlighting
+)
+
+zle -N insert-unambiguous-or-complete
+zle -N menu-search
+zle -N recent-paths
+
+source $ZSH/oh-my-zsh.sh
+
+# ── Navigation ────────────────────────────────────────────────────────────────
+alias ..='cd ..'
+alias ...='cd ../..'
+alias .3='cd ../../..'
+alias .4='cd ../../../..'
+alias .5='cd ../../../../..'
+
+# ── Éditeur ───────────────────────────────────────────────────────────────────
+alias vim='nvim'
+
+# ── ls → eza ──────────────────────────────────────────────────────────────────
+alias ls='eza -al --color=always --group-directories-first --icons'
+alias la='eza -a  --color=always --group-directories-first --icons'
+alias ll='eza -l  --color=always --group-directories-first --icons'
+alias lt='eza -aT --color=always --group-directories-first --icons'
+alias l.='eza -a | grep -E "^\."'
+
+# ── apt ───────────────────────────────────────────────────────────────────────
+alias upall='sudo apt upgrade -y'
+alias upcheck='sudo apt update'
+alias cleanup='sudo apt autoremove --purge'
+
+# ── Colorisation ──────────────────────────────────────────────────────────────
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias ip='ip --color=auto'
+alias diff='diff --color=auto'
+alias df='df -h'
+alias free='free -m'
+
+# ── Ops sécurisées ────────────────────────────────────────────────────────────
+alias cp='cp -iv'
+alias mv='mv -iv'
+alias rm='rm -iv'
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+alias addup='git add -u'
+alias addall='git add .'
+alias branch='git branch'
+alias checkout='git checkout'
+alias clone='git clone'
+alias commit='git commit -m'
+alias fetch='git fetch'
+alias pull='git pull origin'
+alias push='git push origin'
+alias gl='git log --oneline --graph --decorate'
+
+# ── Système ───────────────────────────────────────────────────────────────────
+alias psa='ps auxf'
+alias psmem='ps auxf | sort -nr -k 4'
+alias pscpu='ps auxf | sort -nr -k 3'
+
+# ── Divers ────────────────────────────────────────────────────────────────────
+hyfetch
+
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
