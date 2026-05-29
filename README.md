@@ -1,9 +1,12 @@
 # ubuntu2404
 
 Configuration Ubuntu 24.04 LTS — installation entièrement automatisée.  
-Inclut : Brave · Ghostty · Niri WM · Neovim · Zsh · Citrix Workspace · Bash tweaks.
+Interface : **en_US** · Formats : **fr_CH** (date/monnaie/mesures) · Clavier : **ch/fr**  
+Stack : Brave · Ghostty · Neovim · Zsh · Starship · Hack Nerd Font · Citrix Workspace
 
-## Structure du repo
+---
+
+## Structure
 
 ```
 ubuntu2404/
@@ -15,10 +18,10 @@ ubuntu2404/
 │   └── zshrc              # Zsh : Oh My Zsh + plugins + aliases eza/git
 ├── scripts/
 │   ├── create-iso.sh      # Crée l'ISO autoinstall (macOS + Linux)
-│   ├── post-install.sh    # Setup système (root) — orchestrateur principal
-│   ├── bash-setup.sh      # Bash : ble.sh · Starship · fzf · eza · Hack Nerd Font
-│   ├── citrix-setup.sh    # Citrix Workspace App 2601 (nécessite .deb manuel)
-│   ├── niri-setup.sh      # Niri WM : build source + Waybar + Fuzzel (Catppuccin)
+│   ├── post-install.sh    # Setup automatique (root, pendant autoinstall)
+│   ├── bash-setup.sh      # ble.sh — à lancer manuellement post-reboot
+│   ├── citrix-setup.sh    # Citrix Workspace App 2601 — à lancer manuellement
+│   ├── niri-setup.sh      # Niri WM (build Rust ~20 min) — à lancer manuellement
 │   ├── edge.sh            # MS Edge — portail Office 365 (mode app)
 │   ├── outlook.sh         # Outlook web (Edge)
 │   ├── perplexity.sh      # Perplexity web app (Brave)
@@ -32,92 +35,90 @@ ubuntu2404/
 
 ## Démarrage rapide
 
-### Étape 1 — Préparer le mot de passe
+### 1. Préparer le mot de passe
 
 ```bash
-# Générer un hash SHA-512 pour autoinstall/user-data
 echo "tonmotdepasse" | openssl passwd -6 -stdin
+# → Coller le résultat dans autoinstall/user-data (ligne password:)
 ```
 
-Éditer `autoinstall/user-data` → remplacer la ligne `password:` avec le hash généré.  
-Adapter aussi `hostname` et `username` si nécessaire.
-
-### Étape 2 — Créer la clé USB bootable
+### 2. Créer la clé USB bootable
 
 ```bash
-# macOS ou Linux — crée l'ISO + propose l'écriture USB
+git clone https://github.com/tonybeyond/ubuntu2404.git
+cd ubuntu2404
 bash scripts/create-iso.sh --usb
-
-# Crée l'ISO seulement (écriture manuelle ensuite)
-bash scripts/create-iso.sh
 ```
 
-Ce script :
-- Détecte macOS ou Linux, installe les dépendances si nécessaire (Homebrew/apt)
-- Télécharge Ubuntu 24.04.2 Desktop (~5.7 Go) avec vérification SHA-256 officielle
-- Intègre `autoinstall/user-data` + `meta-data` dans l'ISO
-- Patche GRUB pour démarrer directement en autoinstall (timeout 3s)
-- (Optionnel) Écrit l'ISO sur la clé USB via `dd`
+Le script détecte macOS ou Linux, télécharge Ubuntu 24.04.4, vérifie le SHA-256 officiel, intègre l'autoinstall et guide l'écriture USB.
 
-### Étape 3 — Démarrer et installer
+### 3. Démarrer et installer
 
-1. Insérer la clé USB dans la machine cible
-2. Démarrer depuis la clé (F12 / F2 / DEL selon BIOS)
-3. L'installation démarre automatiquement (~10-20 min)
-4. La machine redémarre et est prête
+Insérer la clé → démarrer depuis la clé (F12/F2/DEL) → l'installation démarre automatiquement (~15 min) → reboot.
 
 ---
 
 ## Ce que l'autoinstall installe automatiquement
 
-### Via `post-install.sh` (root, pendant autoinstall)
+`post-install.sh` s'exécute en root pendant l'installation. Un seul script, pas de sudo imbriqué.
 
 | Composant | Détail |
 |-----------|--------|
+| **Locale** | `en_US.UTF-8` interface · `fr_CH.UTF-8` formats (date, monnaie, mesures) |
+| **Clavier** | `ch/fr` (Suisse romande) |
 | **Brave Browser** | Via repo Brave officiel |
-| **Ghostty** | Terminal, thème Ayu Mirage, splits clavier |
+| **Ghostty** | Terminal, thème Ayu Mirage, Hack Nerd Font Mono |
 | **Neovim** | Build depuis source (stable) + kickstart.nvim |
 | **Oh My Zsh** | Thème bira + plugins autosuggestions/syntax/autocomplete |
-| **Niri WM** | Compositeur Wayland, build depuis source (~15-20 min) |
-| **Citrix Workspace** | Si le `.deb` est disponible — sinon skipped |
-| **Paquets apt** | eza, fzf, bat, btop, hyfetch, nala, vlc, flameshot, tesseract… |
-| **Locale** | fr_CH.UTF-8 activée |
-
-### Via `bash-setup.sh` (utilisateur tony, pendant autoinstall)
-
-| Composant | Détail |
-|-----------|--------|
-| **ble.sh** | Autosuggestions bash + syntax highlighting |
-| **Starship** | Prompt contextuel (git, python, docker…) |
+| **Starship** | Prompt contextuel installé system-wide |
 | **Hack Nerd Font** | Police terminal avec icônes |
-| **~/.bashrc** | Aliases eza, git, apt + config fzf/historique |
+| **~/.bashrc** | Aliases eza, git, apt · fzf · Starship · ble.sh optionnel |
+| **Citrix** | Si le `.deb` est présent dans `~/Downloads` — sinon skipped |
+| **Paquets apt** | eza, fzf, bat, btop, hyfetch, nala, vlc, flameshot, tesseract (fr/en)… |
 
 ---
 
-## Citrix Workspace App
+## Scripts à lancer après le premier reboot
 
-Version actuelle : **2601** (5 mars 2026)  
-SHA-256 : `7ce8c3a32e1e9d698e7bca349ad582136040774a49e35f47e529430918f8b94a`
-
-⚠️ Le téléchargement requiert l'acceptation de la licence Citrix (pas de lien direct).
+Se connecter en tant que `tony`, ouvrir un terminal, puis :
 
 ```bash
-# 1. Télécharger le .deb sur :
-#    https://www.citrix.com/downloads/workspace-app/linux/
-# 2. Placer dans ~/Downloads/
-# 3. Installer :
+# 1. Niri WM (compositeur Wayland) — build Rust depuis source (~20 min)
+bash /opt/ubuntu2404/scripts/niri-setup.sh
+
+# 2. ble.sh (autosuggestions + syntax highlighting bash)
+bash /opt/ubuntu2404/scripts/bash-setup.sh
+
+# 3. Citrix Workspace App (après téléchargement du .deb)
+#    → https://www.citrix.com/downloads/workspace-app/linux/
+#    → Placer le .deb dans ~/Downloads/ puis :
 sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh
 ```
 
-Le script vérifie le checksum, installe les dépendances et fixe les certificats SSL.
+---
+
+## Locale : en_US + fr_CH
+
+Configuration dans `/etc/default/locale` après installation :
+
+```
+LANG=en_US.UTF-8            # Interface, messages système
+LC_TIME=fr_CH.UTF-8         # Format des dates  (29.05.2026)
+LC_NUMERIC=fr_CH.UTF-8      # Séparateur décimal (1'234.56)
+LC_MONETARY=fr_CH.UTF-8     # Monnaie (CHF 12.50)
+LC_PAPER=fr_CH.UTF-8        # Format papier (A4)
+LC_MEASUREMENT=fr_CH.UTF-8  # Unités métriques
+LC_ADDRESS=fr_CH.UTF-8
+LC_TELEPHONE=fr_CH.UTF-8
+```
+
+Vérifier après installation : `locale`
 
 ---
 
-## Niri — Compositeur Wayland
+## Niri WM
 
-`niri-setup.sh` est appelé automatiquement lors du post-install et peut aussi être relancé manuellement.
-
-**Keybinds :**
+`niri-setup.sh` compile Niri depuis les sources et génère les configs.
 
 | Raccourci | Action |
 |-----------|--------|
@@ -130,46 +131,45 @@ Le script vérifie le checksum, installe les dépendances et fixe les certificat
 | `Super+Shift+E` | Quitter Niri |
 | `Print` | Screenshot |
 
-Style : Catppuccin Mocha — Waybar flottante, bordures dégradé bleu→violet.  
-Clavier : `ch/fr` configuré dans Niri.
+Style Catppuccin Mocha · Waybar flottante · Clavier ch/fr
 
 ---
 
-## Bash shell (ble.sh + Starship + fzf)
+## Citrix Workspace App
 
-`bash-setup.sh` améliore bash sans changer de shell :
+Version : **2601** (5 mars 2026)  
+SHA-256 : `7ce8c3a32e1e9d698e7bca349ad582136040774a49e35f47e529430918f8b94a`
+
+Téléchargement manuel requis (EULA Citrix) :
+→ https://www.citrix.com/downloads/workspace-app/linux/
+
+`citrix-setup.sh` vérifie le checksum, installe les dépendances et fixe les certificats SSL.
+
+---
+
+## Bash shell
+
+`bash-setup.sh` compile et installe ble.sh pour améliorer bash sans changer de shell.
 
 | Touche | Fonction |
 |--------|----------|
 | `→` ou `End` | Accepter suggestion ble.sh |
 | `Ctrl+R` | Historique fuzzy (fzf) |
-| `Ctrl+T` | Insérer fichier via fzf |
-| `Alt+C` | Naviguer dans les dossiers via fzf |
+| `Ctrl+T` | Insérer fichier (fzf) |
+| `Alt+C` | Naviguer dossiers (fzf) |
 
-> Configurer la police du terminal sur **Hack Nerd Font Mono** pour les icônes.
+> Police du terminal : **Hack Nerd Font Mono** (installée automatiquement).
 
 ---
 
-## Usage standalone (install existante)
+## Usage standalone
+
+Sur une install Ubuntu existante :
 
 ```bash
 git clone https://github.com/tonybeyond/ubuntu2404.git /opt/ubuntu2404
-
-# Setup système (root)
 sudo bash /opt/ubuntu2404/scripts/post-install.sh
-
-# Bash tweaks (utilisateur)
+bash /opt/ubuntu2404/scripts/niri-setup.sh
 bash /opt/ubuntu2404/scripts/bash-setup.sh
-
-# Citrix (après téléchargement du .deb)
 sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh
 ```
-
----
-
-## Notes
-
-- `post-install.sh` patche automatiquement `exa → eza` dans le `.zshrc` au déploiement
-- La config Ghostty utilise Hack Nerd Font Mono (installé par `bash-setup.sh`)
-- `niri-setup.sh` génère automatiquement les configs Niri, Waybar, Fuzzel avec le thème Catppuccin
-- Les web apps (Edge, Outlook, Teams, YouTube, Perplexity) sont dans `scripts/` — lancer manuellement selon besoin
