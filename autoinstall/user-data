@@ -3,7 +3,9 @@ autoinstall:
   version: 1
 
   # ── Locale & Keyboard ──────────────────────────────────────────────────────
-  locale: fr_CH.UTF-8
+  # Interface en anglais, formats fr_CH configurés par post-install.sh :
+  # LC_TIME / LC_NUMERIC / LC_MONETARY / LC_MEASUREMENT → fr_CH.UTF-8
+  locale: en_US.UTF-8
   keyboard:
     layout: ch
     variant: fr
@@ -39,23 +41,19 @@ autoinstall:
   updates: security
 
   # ── Commandes post-installation ───────────────────────────────────────────
-  # Exécutées dans /target (chroot) avant reboot, en root.
+  # Un seul script, en root, dans le chroot /target.
   # Logs : /var/log/ubuntu2404-setup.log
   #
-  # NOTE : bash-setup.sh (ble.sh) doit être lancé MANUELLEMENT après le
-  # premier login, car ble.sh requiert un build interactif hors chroot :
-  #   bash /opt/ubuntu2404/scripts/bash-setup.sh
+  # Scripts à lancer MANUELLEMENT après le premier reboot :
+  #   bash /opt/ubuntu2404/scripts/niri-setup.sh      (~20 min, build Rust)
+  #   bash /opt/ubuntu2404/scripts/bash-setup.sh      (ble.sh)
+  #   sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh  (nécessite le .deb)
   late-commands:
-    # 1. Cloner le repo dans le système cible
     - curtin in-target --target=/target -- git clone
         https://github.com/tonybeyond/ubuntu2404.git /opt/ubuntu2404
 
-    # 2. Setup complet (root) :
-    #    apt · Ghostty · Brave · Neovim · Oh My Zsh · Starship · Hack Nerd Font
-    #    .bashrc tweaks · Citrix (si .deb présent) · Niri WM
     - curtin in-target --target=/target -- bash -c
         "bash /opt/ubuntu2404/scripts/post-install.sh
          > /var/log/ubuntu2404-setup.log 2>&1"
 
-  # ── Redémarrage ───────────────────────────────────────────────────────────
   shutdown: reboot
