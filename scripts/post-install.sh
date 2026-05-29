@@ -3,7 +3,12 @@
 # post-install.sh — Setup système Ubuntu 24.04
 # =============================================================================
 # Appelé par autoinstall (late-commands, root, chroot).
-# Peut aussi être lancé manuellement : sudo bash /opt/ubuntu2404/scripts/post-install.sh
+# Lancement manuel : sudo bash /opt/ubuntu2404/scripts/post-install.sh
+#
+# Scripts post-reboot (lancer manuellement après le premier login) :
+#   bash /opt/ubuntu2404/scripts/niri-setup.sh       # Niri WM (~20 min)
+#   bash /opt/ubuntu2404/scripts/bash-setup.sh       # ble.sh
+#   sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh # Citrix (nécessite .deb)
 # =============================================================================
 
 set -euo pipefail
@@ -66,12 +71,34 @@ apt_install \
   gawk bash-completion node-typescript \
   ninja-build cmake gettext
 
-# ── 4. Locale fr_CH ───────────────────────────────────────────────────────────
+# ── 4. Locale : en_US interface + fr_CH formats ───────────────────────────────
 log_section "Locale"
+# Générer les deux locales
+locale-gen en_US.UTF-8 2>/dev/null || true
+locale-gen fr_CH.UTF-8 2>/dev/null || true
+
+# Décommenter fr_CH si présent dans locale.gen (Ubuntu minimal)
 if grep -q "# fr_CH.UTF" /etc/locale.gen 2>/dev/null; then
   sed -i 's/# fr_CH.UTF/fr_CH.UTF/' /etc/locale.gen
-  locale-gen && log_ok "Locale fr_CH.UTF-8 activée"
+  locale-gen
 fi
+
+# Interface en anglais (LANG), formats régionaux en fr_CH (LC_*)
+# LC_ALL n'est pas défini intentionnellement pour permettre l'override par var
+cat > /etc/default/locale << 'LOCALE_EOF'
+LANG=en_US.UTF-8
+LC_TIME=fr_CH.UTF-8
+LC_NUMERIC=fr_CH.UTF-8
+LC_MONETARY=fr_CH.UTF-8
+LC_PAPER=fr_CH.UTF-8
+LC_ADDRESS=fr_CH.UTF-8
+LC_TELEPHONE=fr_CH.UTF-8
+LC_MEASUREMENT=fr_CH.UTF-8
+LC_IDENTIFICATION=fr_CH.UTF-8
+LOCALE_EOF
+
+update-locale 2>/dev/null || true
+log_ok "Locale : en_US.UTF-8 (interface) + fr_CH.UTF-8 (formats date/monnaie/mesures)"
 
 # ── 5. Ghostty ────────────────────────────────────────────────────────────────
 log_section "Ghostty"
@@ -132,7 +159,6 @@ fi
 
 ZSH_PLUGINS="${TARGET_HOME}/.oh-my-zsh/custom/plugins"
 mkdir -p "${ZSH_PLUGINS}"
-
 declare -A OMZ_PLUGINS=(
   ["zsh-autosuggestions"]="https://github.com/zsh-users/zsh-autosuggestions"
   ["zsh-syntax-highlighting"]="https://github.com/zsh-users/zsh-syntax-highlighting.git"
@@ -144,7 +170,6 @@ for name in "${!OMZ_PLUGINS[@]}"; do
     && log_ok "Plugin zsh: ${name}" || log_error "Plugin zsh: ${name}"
 done
 
-# Déployer .zshrc (exa → eza corrigé)
 if [[ -f "${REPO_DIR}/configs/zshrc" ]]; then
   sed 's/exa /eza /g; s/exa -/eza -/g' "${REPO_DIR}/configs/zshrc" > "${TARGET_HOME}/.zshrc"
   chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.zshrc"
@@ -152,22 +177,21 @@ if [[ -f "${REPO_DIR}/configs/zshrc" ]]; then
 fi
 chsh -s "$(which zsh)" "${TARGET_USER}" && log_ok "zsh shell par défaut"
 
-# ── 9. Bash tweaks (ble.sh sera installé manuellement après reboot) ───────────
-log_section "Bash tweaks (Starship + Hack Nerd Font + aliases)"
+# ── 9. Bash tweaks (Starship + Hack Nerd Font + aliases) ─────────────────────
+log_section "Bash tweaks"
 
-# 9a. Starship — installé system-wide en root (pas besoin de sudo depuis user)
+# Starship — installé system-wide (root), pas besoin de sudo depuis user
 if ! command -v starship &>/dev/null; then
   curl -sS https://starship.rs/install.sh | sh -s -- --yes \
-    && log_ok "Starship installé → /usr/local/bin" || log_error "Starship install"
+    && log_ok "Starship → /usr/local/bin" || log_error "Starship install"
 else
   log_ok "Starship déjà présent"
 fi
 
-# 9b. Config Starship (écrite en root, ownership corrigé)
-STARSHIP_CONF="${TARGET_HOME}/.config/starship.toml"
+# Config Starship
 mkdir -p "${TARGET_HOME}/.config"
-if [[ ! -f "${STARSHIP_CONF}" ]]; then
-  cat > "${STARSHIP_CONF}" << 'TOML'
+if [[ ! -f "${TARGET_HOME}/.config/starship.toml" ]]; then
+  cat > "${TARGET_HOME}/.config/starship.toml" << 'TOML'
 format = """
 $os$username$hostname$directory$git_branch$git_status$python$nodejs$rust$golang$docker_context
 $character"""
@@ -203,7 +227,7 @@ TOML
   log_ok "Config Starship créée"
 fi
 
-# 9c. Hack Nerd Font (download en root, extraction dans home user, ownership fixé)
+# Hack Nerd Font — download en root, extraction dans home user, ownership fixé
 FONT_DIR="${TARGET_HOME}/.local/share/fonts/HackNerdFont"
 if [[ ! -d "${FONT_DIR}" ]]; then
   mkdir -p "${FONT_DIR}"
@@ -217,8 +241,7 @@ if [[ ! -d "${FONT_DIR}" ]]; then
     || log_error "Hack Nerd Font"
 fi
 
-# 9d. Patch ~/.bashrc — bloc de tweaks complet
-# ble.sh sera installé manuellement via bash-setup.sh après le premier login
+# Patch ~/.bashrc — ble.sh conditionnel (nécessite bash-setup.sh post-reboot)
 BASHRC="${TARGET_HOME}/.bashrc"
 if ! grep -q "ubuntu2404 bash tweaks" "${BASHRC}" 2>/dev/null; then
   [[ -f "${BASHRC}" ]] && cp "${BASHRC}" "${BASHRC}.bak-pre-autoinstall"
@@ -226,15 +249,14 @@ if ! grep -q "ubuntu2404 bash tweaks" "${BASHRC}" 2>/dev/null; then
 
 # ── ubuntu2404 bash tweaks ────────────────────────────────────────────────────
 
-# ble.sh — autosuggestions + syntax highlighting
-# Installer via : bash /opt/ubuntu2404/scripts/bash-setup.sh
+# ble.sh — installe via : bash /opt/ubuntu2404/scripts/bash-setup.sh
 [[ $- == *i* ]] && [[ -f ~/.local/share/blesh/ble.sh ]] \
   && source ~/.local/share/blesh/ble.sh --noattach
 
 # Starship prompt
 eval "$(starship init bash)"
 
-# fzf — Ctrl+R historique · Ctrl+T fichiers · Alt+C dossiers
+# fzf
 eval "$(fzf --bash)"
 export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border --info=inline'
 
@@ -291,13 +313,12 @@ alias gc='git commit'
 alias gp='git push'
 alias gl='git log --oneline --graph --decorate'
 
-# ble.sh attach (en fin de .bashrc, uniquement si installé)
+# ble.sh attach (uniquement si installé)
 [[ ${BLE_VERSION-} ]] && ble-attach
-
 # ── fin ubuntu2404 bash tweaks ────────────────────────────────────────────────
 BASHRC_BLOCK
   chown "${TARGET_USER}:${TARGET_USER}" "${BASHRC}"
-  log_ok ".bashrc patché (ble.sh optionnel)"
+  log_ok ".bashrc patché"
 fi
 
 # ── 10. Citrix Workspace ──────────────────────────────────────────────────────
@@ -307,30 +328,20 @@ if [[ -x "${REPO_DIR}/scripts/citrix-setup.sh" ]]; then
     || log_error "Citrix SKIPPED — lancer après reboot : sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh"
 fi
 
-# ── 11. Niri WM ───────────────────────────────────────────────────────────────
-log_section "Niri WM"
-if ! command -v niri &>/dev/null; then
-  if [[ -x "${REPO_DIR}/scripts/niri-setup.sh" ]]; then
-    as_user "bash ${REPO_DIR}/scripts/niri-setup.sh" \
-      && log_ok "Niri installé" \
-      || log_error "Niri FAILED — relancer : bash /opt/ubuntu2404/scripts/niri-setup.sh"
-  fi
-else
-  log_ok "Niri déjà présent"
-fi
-
 # ── Résumé ────────────────────────────────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  ubuntu2404 post-install — TERMINÉ                      ║"
-printf "║  Erreurs : %-3d                                           ║\n" "${ERROR_COUNT}"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║  ubuntu2404 post-install — TERMINÉ                          ║"
+printf "║  Erreurs : %-3d                                               ║\n" "${ERROR_COUNT}"
 if [[ ${ERROR_COUNT} -eq 0 ]]; then
-echo "║  Statut  : ✓ Tout OK                                    ║"
+echo "║  Statut  : ✓ Tout OK                                        ║"
 else
-echo "║  Statut  : ⚠ Vérifier : ${LOG_FILE}"
+echo "║  Statut  : ⚠ Voir : ${LOG_FILE}"
 fi
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║  Après premier reboot :                                  ║"
-echo "║  • ble.sh    → bash /opt/ubuntu2404/scripts/bash-setup.sh ║"
-echo "║  • Citrix    → sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║  Scripts à lancer après le premier reboot :                 ║"
+echo "║  1. bash /opt/ubuntu2404/scripts/niri-setup.sh  (~20 min)  ║"
+echo "║  2. bash /opt/ubuntu2404/scripts/bash-setup.sh  (ble.sh)   ║"
+echo "║  3. sudo bash /opt/ubuntu2404/scripts/citrix-setup.sh       ║"
+echo "║     (après avoir téléchargé le .deb dans ~/Downloads)       ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
