@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# =============================================================================
+# post-install.sh — Setup système Ubuntu 24.04
+# =============================================================================
+# Appelé automatiquement par autoinstall (late-commands, root, chroot).
+# Peut aussi être lancé manuellement après une install fraîche :
+#   sudo bash /opt/ubuntu2404/scripts/post-install.sh
+# =============================================================================
+
+set -euo pipefail
+
+# ── Config ────────────────────────────────────────────────────────────────────
+TARGET_USER="${SUDO_USER:-tony}"
+TARGET_HOME="/home/${TARGET_USER}"
+REPO_DIR="/opt/ubuntu2404"
+LOG_FILE="/var/log/ubuntu2404-setup.log"
+ERROR_COUNT=0
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+log_info()    { echo "[$(date +'%H:%M:%S')] ·     $*" | tee -a "${LOG_FILE}"; }
+log_ok()      { echo "[$(date +'%H:%M:%S')] ✓     $*" | tee -a "${LOG_FILE}"; }
+log_error()   { echo "[$(date +'%H:%M:%S')] ✗     $*" | tee -a "${LOG_FILE}" >&2; ((ERROR_COUNT++)) || true; }
+log_section() { echo "" | tee -a "${LOG_FILE}"; echo "[$(date +'%H:%M:%S')] ════ $* ════" | tee -a "${LOG_FILE}"; }
+
+is_installed() { dpkg -s "$1" &>/dev/null; }
+
+apt_install() {
+  for pkg in "$@"; do
+    is_installed "$pkg" || apt install -y "$pkg" 2>>"${LOG_FILE}" \
+      && log_ok "apt: $pkg" || log_error "apt: $pkg FAILED"
+  done
+}
+
+[[ $EUID -eq 0 ]] || { echo "Requiert root (sudo)."; exit 1; }
+mkdir -p "$(dirname "${LOG_FILE}")"
+log_info "=== ubuntu2404 post-install — $(date) ==="
+log_info "Utilisateur cible : ${TARGET_USER}"
+
+# ── 1. APT update ─────────────────────────────────────────────────────────────
+log_section "Mise à jour système"
+apt update -q && apt upgrade -y || log_error "apt update/upgrade"
+
+# ── 2. Suppression des paquets indésirables ───────────────────────────────────
+log_section "Suppression du bloat"
+BLOAT=(gnome-games evolution cheese gnome-maps gnome-music gnome-sound-recorder
+       rhythmbox gnome-weather gnome-clocks gnome-contacts gnome-characters)
+for pkg in "${BLOAT[@]}"; do
+  is_installed "$pkg" && apt remove -y "$pkg" && log_ok "Retiré : $pkg" || true
+done
+mapfile -t TB < <(apt list --installed 2>/dev/null | grep -i thunderbird | awk -F/ '{print $1}' || true)
+mapfile -t LO < <(apt list --installed 2>/dev/null | grep -i libreoffice | awk -F/ '{print $1}' || true)
+[[ ${#TB[@]} -gt 0 ]] && apt remove -y "${TB[@]}" && log_ok "Thunderbird retiré" || true
+[[ ${#LO[@]} -gt 0 ]] && apt remove -y "${LO[@]}" && log_ok "LibreOffice retiré" || true
+apt autoremove --purge -y && apt autoclean
+
+# ── 3. Paquets principaux ─────────────────────────────────────────────────────
+log_section "Paquets principaux"
+apt_install \
+  curl git wget build-essential unzip gnupg ca-certificates apt-transport-https \
+  zsh fzf eza bat btop hyfetch nala vlc xclip flameshot \
+  gnome-tweaks gnome-shell-extension-appindicator gnome-shell-extension-manager \
+  gimagereader tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng \
+  gawk bash-completion node-typescript \
+  ninja-build cmake gettext
+
+# ── 4. Locale fr_CH ───────────────────────────────────────────────────────────
+log_section "Locale"
+if grep -q "# fr_CH.UTF" /etc/locale.gen 2>/dev/null; then
+  sed -i 's/# fr_CH.UTF/fr_CH.UTF/' /etc/locale.gen
+  locale-gen && log_ok "Locale fr_CH.UTF-8 activée"
+fi
+
+# ── 5. Ghostty terminal ───────────────────────────────────────────────────────
+log_section "Ghostty"
+if ! command -v ghostty &>/dev/null; then
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mkasberg/ghostty-ubuntu/HEAD/install.sh)" \
+    && log_ok "Ghostty installé" || log_error "Ghostty install"
+else
+  log_ok "Ghostty déjà présent"
+fi
+
+# Config Ghostty
+mkdir -p "${TARGET_HOME}/.config/ghostty"
+if [[ -f "${REPO_DIR}/ghostty/.config/ghostty/config" ]]; then
+  cp "${REPO_DIR}/ghostty/.config/ghostty/config" "${TARGET_HOME}/.config/ghostty/config"
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.config/ghostty"
+  log_ok "Config Ghostty déployée"
+fi
+
+# ── 6. Vivaldi browser ────────────────────────────────────────────────────────
+log_section "Vivaldi"
+if ! command -v vivaldi &>/dev/null; then
+  curl -fsSL https://repo.vivaldi.com/archive/linux_signing_key.pub \
+    | gpg --dearmor -o /usr/share/keyrings/vivaldi.gpg
+  echo "deb [signed-by=/usr/share/keyrings/vivaldi.gpg arch=$(dpkg --print-architecture)] \
+https://repo.vivaldi.com/archive/deb/ stable main" \
+    | tee /etc/apt/sources.list.d/vivaldi.sources >/dev/null
+  apt update -q && apt install -y vivaldi-stable \
+    && log_ok "Vivaldi installé" || log_error "Vivaldi install"
+else
+  log_ok "Vivaldi déjà présent"
+fi
+
+# ── 7. Neovim (depuis source) ─────────────────────────────────────────────────
+log_section "Neovim"
+if ! command -v nvim &>/dev/null; then
+  BUILD_DIR="/tmp/neovim-build"
+  [[ -d "${BUILD_DIR}" ]] || \
+    git clone https://github.com/neovim/neovim.git --branch=stable --depth=1 "${BUILD_DIR}"
+  cd "${BUILD_DIR}"
+  make CMAKE_BUILD_TYPE=RelWithDebInfo 2>>"${LOG_FILE}"
+  cd build && cpack -G DEB
+  DEB=$(find . -name 'nvim-linux*.deb' | head -n1)
+  [[ -n "${DEB}" ]] && dpkg -i "${DEB}" && log_ok "Neovim installé" || log_error "Neovim build"
+  cd /tmp
+else
+  log_ok "Neovim déjà présent"
+fi
+
+# Kickstart.nvim config
+NVIM_CONF="${TARGET_HOME}/.config/nvim"
+if [[ ! -d "${NVIM_CONF}" ]]; then
+  sudo -u "${TARGET_USER}" git clone https://github.com/nvim-lua/kickstart.nvim.git "${NVIM_CONF}" \
+    && log_ok "kickstart.nvim déployé" || log_error "kickstart.nvim clone"
+fi
+
+# ── 8. Oh My Zsh + plugins ────────────────────────────────────────────────────
+log_section "Oh My Zsh"
+if [[ ! -d "${TARGET_HOME}/.oh-my-zsh" ]]; then
+  sudo -u "${TARGET_USER}" HOME="${TARGET_HOME}" \
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
+    "" --unattended && log_ok "Oh My Zsh installé" || log_error "Oh My Zsh install"
+fi
+
+ZSH_PLUGINS="${TARGET_HOME}/.oh-my-zsh/custom/plugins"
+mkdir -p "${ZSH_PLUGINS}"
+
+declare -A PLUGINS=(
+  ["zsh-autosuggestions"]="https://github.com/zsh-users/zsh-autosuggestions"
+  ["zsh-syntax-highlighting"]="https://github.com/zsh-users/zsh-syntax-highlighting.git"
+  ["zsh-autocomplete"]="https://github.com/marlonrichert/zsh-autocomplete.git"
+)
+for name in "${!PLUGINS[@]}"; do
+  if [[ ! -d "${ZSH_PLUGINS}/${name}" ]]; then
+    sudo -u "${TARGET_USER}" git clone "${PLUGINS[$name]}" "${ZSH_PLUGINS}/${name}" \
+      && log_ok "Plugin zsh: ${name}" || log_error "Plugin zsh: ${name}"
+  fi
+done
+
+# .zshrc (exa → eza patché automatiquement)
+if [[ -f "${REPO_DIR}/zsh/new_zshrc" ]]; then
+  sed 's/exa /eza /g; s/exa -/eza -/g' "${REPO_DIR}/zsh/new_zshrc" > "${TARGET_HOME}/.zshrc"
+  chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.zshrc"
+  log_ok ".zshrc déployé (exa→eza corrigé)"
+fi
+
+chsh -s "$(which zsh)" "${TARGET_USER}" && log_ok "zsh défini comme shell par défaut"
+
+# ── 9. Citrix Workspace ───────────────────────────────────────────────────────
+log_section "Citrix Workspace"
+if [[ -x "${REPO_DIR}/scripts/citrix-setup.sh" ]]; then
+  bash "${REPO_DIR}/scripts/citrix-setup.sh" \
+    && log_ok "Citrix installé" \
+    || log_error "Citrix SKIPPED (lancer manuellement : bash /opt/ubuntu2404/scripts/citrix-setup.sh)"
+fi
+
+# ── Résumé ────────────────────────────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║  ubuntu2404 post-install — TERMINÉ                  ║"
+printf "║  Erreurs : %-3d                                       ║\n" "${ERROR_COUNT}"
+echo "║  Log : ${LOG_FILE}"
+echo "╠══════════════════════════════════════════════════════╣"
+echo "║  Étapes manuelles restantes :                        ║"
+echo "║  • Citrix .deb → scripts/citrix-setup.sh            ║"
+echo "║  • Niri WM     → scripts/niri2.sh (~20 min)         ║"
+echo "║  • Bash tweaks → scripts/bash-setup.sh (user)       ║"
+echo "╚══════════════════════════════════════════════════════╝"
