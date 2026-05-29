@@ -13,7 +13,6 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 UBUNTU_VERSION="24.04.2"
-UBUNTU_CODENAME="noble"
 UBUNTU_ISO="ubuntu-${UBUNTU_VERSION}-desktop-amd64.iso"
 UBUNTU_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}/${UBUNTU_ISO}"
 SHA256_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}/SHA256SUMS"
@@ -49,12 +48,11 @@ Options:
 Ce script :
   1. Détecte macOS ou Linux et installe les outils requis
   2. Télécharge Ubuntu ${UBUNTU_VERSION} Desktop (AMD64)
-  3. Vérifie le checksum SHA-256 officiel
+  3. Vérifie le checksum SHA-256 officiel Ubuntu
   4. Intègre autoinstall/user-data + meta-data dans l'ISO
   5. Modifie GRUB pour démarrer en autoinstall automatiquement
   6. (Optionnel) Écrit l'ISO sur une clé USB
 
-L'ISO résultant démarre et installe Ubuntu sans interaction.
 ⚠  Remplacer le hash de mot de passe dans autoinstall/user-data avant usage !
 
 EOF
@@ -78,7 +76,7 @@ else
   die "OS non supporté : $(uname)"
 fi
 
-# ── Vérifier autoinstall/user-data ────────────────────────────────────────────
+# ── Vérifier les fichiers source ──────────────────────────────────────────────
 log_section "Vérification des fichiers source"
 [[ -f "${REPO_DIR}/autoinstall/user-data" ]] \
   || die "autoinstall/user-data introuvable. Lancer depuis la racine du repo."
@@ -100,7 +98,6 @@ install_deps_macos() {
   if ! command -v brew &>/dev/null; then
     log_info "Installation de Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    # Ajout au PATH selon l'architecture
     if [[ "${ARCH}" == "arm64" ]]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
     else
@@ -110,14 +107,12 @@ install_deps_macos() {
   else
     log_ok "Homebrew présent"
   fi
-
   for tool in xorriso wget; do
     if ! command -v "${tool}" &>/dev/null; then
       log_info "Installation de ${tool}..."
-      brew install "${tool}"
-      log_ok "${tool} installé"
+      brew install "${tool}" && log_ok "${tool} installé"
     else
-      log_ok "${tool} présent"
+      log_ok "${tool} présent ($(${tool} --version 2>&1 | head -1))"
     fi
   done
 }
@@ -126,21 +121,15 @@ install_deps_linux() {
   local missing=()
   command -v xorriso &>/dev/null || missing+=("xorriso")
   command -v wget    &>/dev/null || missing+=("wget")
-  command -v sha256sum &>/dev/null || true  # coreutils, toujours présent
-
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_info "Installation : ${missing[*]}"
-    if command -v apt-get &>/dev/null; then
-      sudo apt-get install -y "${missing[@]}"
-    elif command -v dnf &>/dev/null; then
-      sudo dnf install -y "${missing[@]}"
-    elif command -v pacman &>/dev/null; then
-      sudo pacman -S --noconfirm "${missing[@]}"
-    else
-      die "Gestionnaire de paquets non reconnu. Installer manuellement : ${missing[*]}"
+    if   command -v apt-get &>/dev/null; then sudo apt-get install -y "${missing[@]}"
+    elif command -v dnf     &>/dev/null; then sudo dnf install -y "${missing[@]}"
+    elif command -v pacman  &>/dev/null; then sudo pacman -S --noconfirm "${missing[@]}"
+    else die "Gestionnaire de paquets non reconnu. Installer manuellement : ${missing[*]}"
     fi
   fi
-  log_ok "Dépendances OK (xorriso, wget)"
+  log_ok "Dépendances OK (xorriso $(xorriso --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo '?'))"
 }
 
 [[ "${OS_TYPE}" == "macos" ]] && install_deps_macos || install_deps_linux
@@ -152,26 +141,25 @@ ISO_PATH="${HOME}/Downloads/${UBUNTU_ISO}"
 if [[ -f "${ISO_PATH}" ]]; then
   log_ok "ISO déjà présent : ${ISO_PATH}"
 else
-  log_info "Téléchargement (~5.7 Go)..."
+  log_info "Téléchargement (~5.9 Go)..."
   log_info "URL : ${UBUNTU_URL}"
   mkdir -p "${HOME}/Downloads"
   wget --progress=bar:force -O "${ISO_PATH}.part" "${UBUNTU_URL}" \
     && mv "${ISO_PATH}.part" "${ISO_PATH}" \
     || die "Téléchargement échoué"
-  log_ok "ISO téléchargé : ${ISO_PATH}"
+  log_ok "ISO téléchargé"
 fi
 
 # ── Vérifier le SHA-256 ───────────────────────────────────────────────────────
 log_section "Vérification checksum"
-log_info "Récupération de la liste officielle SHA256SUMS Ubuntu..."
+log_info "Récupération SHA256SUMS officiel Ubuntu..."
 SHA256_FILE="/tmp/ubuntu-sha256sums"
-wget -q -O "${SHA256_FILE}" "${SHA256_URL}" \
-  || die "Impossible de récupérer SHA256SUMS"
+wget -q -O "${SHA256_FILE}" "${SHA256_URL}" || die "Impossible de récupérer SHA256SUMS"
 
-EXPECTED_SHA=$(grep "${UBUNTU_ISO}" "${SHA256_FILE}" | awk '{print $1}')
-[[ -n "${EXPECTED_SHA}" ]] || die "Checksum pour ${UBUNTU_ISO} introuvable dans SHA256SUMS"
+EXPECTED_SHA=$(grep " ${UBUNTU_ISO}$" "${SHA256_FILE}" | awk '{print $1}')
+[[ -n "${EXPECTED_SHA}" ]] || die "Checksum pour ${UBUNTU_ISO} introuvable"
 
-log_info "Calcul du SHA-256 (peut prendre 30s)..."
+log_info "Calcul du SHA-256 (peut prendre ~30s)..."
 if [[ "${OS_TYPE}" == "macos" ]]; then
   ACTUAL_SHA=$(shasum -a 256 "${ISO_PATH}" | awk '{print $1}')
 else
@@ -181,153 +169,146 @@ fi
 if [[ "${ACTUAL_SHA}" == "${EXPECTED_SHA}" ]]; then
   log_ok "Checksum OK : ${EXPECTED_SHA:0:16}..."
 else
-  log_error "Checksum INCORRECT !"
-  log_error "  Attendu : ${EXPECTED_SHA}"
-  log_error "  Obtenu  : ${ACTUAL_SHA}"
+  log_error "Checksum INCORRECT — ISO corrompu ou mauvaise version"
   rm -f "${ISO_PATH}"
-  die "ISO corrompu ou modifié. Supprimé. Relancer pour re-télécharger."
+  die "Fichier supprimé. Relancer pour re-télécharger."
 fi
 
-# ── Préparer le répertoire de travail ─────────────────────────────────────────
-log_section "Préparation du workspace"
+# ── Préparer le workspace ─────────────────────────────────────────────────────
+log_section "Préparation workspace"
 rm -rf "${WORK_DIR}"
-mkdir -p "${WORK_DIR}/iso" "${WORK_DIR}/autoinstall"
+mkdir -p "${WORK_DIR}"
 
-# Extraire le grub.cfg de l'ISO original (sans tout extraire)
-log_info "Extraction de grub.cfg depuis l'ISO..."
+# Extraire grub.cfg de l'ISO (sans tout extraire)
+log_info "Extraction de grub.cfg..."
 xorriso -osirrox on \
   -indev "${ISO_PATH}" \
-  -extract /boot/grub/grub.cfg "${WORK_DIR}/grub.cfg" \
-  2>/dev/null \
-  || die "Impossible d'extraire grub.cfg — version ISO incompatible ?"
-
+  -extract /boot/grub/grub.cfg "${WORK_DIR}/grub_orig.cfg" \
+  > /dev/null 2>&1 \
+  || die "Impossible d'extraire grub.cfg depuis l'ISO"
 log_ok "grub.cfg extrait"
 
 # ── Patcher le grub.cfg ───────────────────────────────────────────────────────
-log_section "Modification de GRUB"
+log_section "Modification GRUB"
 
-# Réduire le timeout à 3s
-sed 's/set timeout=[0-9]*/set timeout=3/' "${WORK_DIR}/grub.cfg" \
-  > "${WORK_DIR}/grub_patched.cfg.tmp"
-
-# Injecter les paramètres autoinstall sur les lignes 'linux .../vmlinuz'
-# Utilise awk pour plus de robustesse cross-platform
+# Réduire le timeout et injecter les params autoinstall
 awk '
-/\/casper\/vmlinuz/ && !/autoinstall/ {
-  sub(/\/casper\/vmlinuz/, "/casper/vmlinuz autoinstall \"ds=nocloud;s=/cdrom/autoinstall/\"")
-}
-{ print }
-' "${WORK_DIR}/grub_patched.cfg.tmp" > "${WORK_DIR}/grub_patched.cfg"
+  /set timeout=[0-9]/ { sub(/set timeout=[0-9]*/, "set timeout=3") }
+  /\/casper\/vmlinuz/ && !/autoinstall/ {
+    sub(/\/casper\/vmlinuz/, "/casper/vmlinuz autoinstall \"ds=nocloud;s=/cdrom/autoinstall/\"")
+  }
+  { print }
+' "${WORK_DIR}/grub_orig.cfg" > "${WORK_DIR}/grub_patched.cfg"
 
-rm "${WORK_DIR}/grub_patched.cfg.tmp"
-
-# Vérification
 if grep -q "autoinstall" "${WORK_DIR}/grub_patched.cfg"; then
-  log_ok "GRUB patché (autoinstall injecté)"
+  log_ok "GRUB patché (autoinstall + timeout=3s)"
 else
-  log_warn "Pattern vmlinuz non trouvé dans grub.cfg — vérifier manuellement"
-  log_warn "Fichier : ${WORK_DIR}/grub_patched.cfg"
+  log_warn "Pattern vmlinuz non trouvé — vérifier ${WORK_DIR}/grub_patched.cfg"
 fi
 
-# ── Construire l'ISO personnalisé ─────────────────────────────────────────────
+# ── Construire l'ISO autoinstall ──────────────────────────────────────────────
 log_section "Construction de l'ISO autoinstall"
-
 OUTPUT_PATH="${HOME}/Downloads/${OUTPUT_ISO}"
-log_info "Copie de l'ISO original → ${OUTPUT_PATH}"
-cp "${ISO_PATH}" "${OUTPUT_PATH}"
+rm -f "${OUTPUT_PATH}"
 
-log_info "Injection des fichiers autoinstall..."
+# Préparer les fichiers à injecter dans une arborescence temporaire
+# Structure : refléter les chemins ISO pour un mapping propre
+INJECT_DIR="${WORK_DIR}/inject"
+mkdir -p "${INJECT_DIR}/autoinstall"
 
-# Copier les fichiers locaux vers le workspace
-cp "${REPO_DIR}/autoinstall/user-data" "${WORK_DIR}/user-data"
-cp "${REPO_DIR}/autoinstall/meta-data" "${WORK_DIR}/meta-data"
+cp "${REPO_DIR}/autoinstall/user-data" "${INJECT_DIR}/autoinstall/user-data"
+cp "${REPO_DIR}/autoinstall/meta-data" "${INJECT_DIR}/autoinstall/meta-data"
 
-# Injecter dans l'ISO via xorriso (mode modification in-place)
-xorriso -dev "${OUTPUT_PATH}" \
-  -mkdir /autoinstall \
-  -update "${WORK_DIR}/user-data"    /autoinstall/user-data \
-  -update "${WORK_DIR}/meta-data"    /autoinstall/meta-data \
-  -update "${WORK_DIR}/grub_patched.cfg" /boot/grub/grub.cfg \
-  -commit \
-  2>/dev/null \
-  && log_ok "Fichiers injectés" \
-  || die "Injection xorriso échouée"
+log_info "Création de l'ISO (~même taille que l'original, peut prendre 2-5 min)..."
 
-# ── Résumé ISO ────────────────────────────────────────────────────────────────
-ISO_SIZE=$(du -sh "${OUTPUT_PATH}" | cut -f1)
-log_ok "ISO créé : ${OUTPUT_PATH} (${ISO_SIZE})"
-printf "\n${GREEN}${BOLD}  ✓ ISO autoinstall prêt !${NC}\n\n"
-echo "  Fichier : ${OUTPUT_PATH}"
-echo "  Contenu : autoinstall/user-data + meta-data + grub patché"
-echo ""
+# xorriso -indev/-outdev : crée un nouvel ISO basé sur l'original avec modifications
+# -overwrite on         : autorise l'écrasement de fichiers existants (grub.cfg)
+# -map dir /dir         : ajoute/remplace un répertoire entier dans l'ISO
+# -map file /path/file  : ajoute/remplace un fichier spécifique
+# -boot_image any replay : préserve TOUTE la structure de boot (BIOS MBR + UEFI EFI)
+xorriso \
+  -indev "${ISO_PATH}" \
+  -outdev "${OUTPUT_PATH}" \
+  -overwrite on \
+  -map "${INJECT_DIR}/autoinstall" /autoinstall \
+  -map "${WORK_DIR}/grub_patched.cfg" /boot/grub/grub.cfg \
+  -boot_image any replay \
+  2>&1 | grep -v "^xorriso" | grep -v "^$" | tail -8 \
+  && log_ok "ISO créé avec succès" \
+  || die "Création ISO échouée — voir les messages ci-dessus"
 
-# Nettoyer le workspace
+# Nettoyer
 rm -rf "${WORK_DIR}"
 
-# ── Écriture USB (optionnel) ──────────────────────────────────────────────────
+ISO_SIZE=$(du -sh "${OUTPUT_PATH}" | cut -f1)
+printf "\n${GREEN}${BOLD}  ✓ ISO autoinstall prêt !${NC}\n\n"
+echo "  Fichier : ${OUTPUT_PATH}"
+echo "  Taille  : ${ISO_SIZE}"
+echo "  Contenu : autoinstall/user-data · meta-data · grub patché (timeout 3s)"
+echo ""
+
+# ── Écriture USB ──────────────────────────────────────────────────────────────
 if [[ "${WRITE_USB}" == false ]]; then
-  log_info "Pour écrire sur clé USB : bash scripts/create-iso.sh --usb"
-  log_info "Ou manuellement :"
+  echo "  Pour écrire sur clé USB :"
   if [[ "${OS_TYPE}" == "macos" ]]; then
-    echo "    diskutil list                              # Identifier la clé"
+    echo "    diskutil list                     # Repérer la clé (ex: /dev/disk2)"
     echo "    diskutil unmountDisk /dev/diskN"
-    echo "    sudo dd if=${OUTPUT_PATH} of=/dev/rdiskN bs=1m status=progress"
+    echo "    sudo dd if=\"${OUTPUT_PATH}\" of=/dev/rdiskN bs=1m status=progress"
     echo "    diskutil eject /dev/diskN"
   else
-    echo "    lsblk                                      # Identifier la clé (/dev/sdX)"
-    echo "    sudo dd if=${OUTPUT_PATH} of=/dev/sdX bs=4M status=progress oflag=sync"
+    echo "    lsblk                             # Repérer la clé (ex: /dev/sdb)"
+    echo "    sudo dd if=\"${OUTPUT_PATH}\" of=/dev/sdX bs=4M status=progress oflag=sync"
   fi
+  echo ""
+  echo "  Ou relancer avec --usb : bash scripts/create-iso.sh --usb"
   exit 0
 fi
 
-# ── Mode --usb : écriture interactive ────────────────────────────────────────
+# ── Mode --usb ────────────────────────────────────────────────────────────────
 log_section "Écriture sur clé USB"
-log_warn "⚠  Cette opération EFFACE DÉFINITIVEMENT le contenu de la clé USB sélectionnée !"
+log_warn "⚠  Cette opération EFFACE DÉFINITIVEMENT le contenu de la clé USB !"
 echo ""
 
-list_disks() {
-  if [[ "${OS_TYPE}" == "macos" ]]; then
-    echo "  Périphériques externes détectés :"
-    diskutil list external physical | grep -E "^/dev|GB|MB" | sed 's/^/    /'
-    echo ""
-    printf "  Entrer le numéro de disque (ex: 2 pour /dev/disk2) : "
-    read -r DISK_NUM
-    USB_DEVICE="/dev/disk${DISK_NUM}"
-    USB_RAW="/dev/rdisk${DISK_NUM}"
-  else
-    echo "  Périphériques disponibles :"
-    lsblk -d -p -o NAME,SIZE,TYPE,TRAN,VENDOR 2>/dev/null | sed 's/^/    /'
-    echo ""
-    printf "  Entrer le chemin de la clé USB (ex: /dev/sdb) : "
-    read -r USB_DEVICE
-    USB_RAW="${USB_DEVICE}"
-  fi
-}
-
-list_disks
+if [[ "${OS_TYPE}" == "macos" ]]; then
+  echo "  Périphériques externes détectés :"
+  diskutil list external physical | grep -E "^/dev|GB|MB" | sed 's/^/    /'
+  echo ""
+  printf "  Numéro de disque (ex: 2 pour /dev/disk2) : "
+  read -r DISK_NUM
+  USB_DEVICE="/dev/disk${DISK_NUM}"
+  USB_RAW="/dev/rdisk${DISK_NUM}"
+else
+  echo "  Périphériques disponibles :"
+  lsblk -d -p -o NAME,SIZE,TYPE,TRAN 2>/dev/null | sed 's/^/    /'
+  echo ""
+  printf "  Chemin de la clé USB (ex: /dev/sdb) : "
+  read -r USB_DEVICE
+  USB_RAW="${USB_DEVICE}"
+fi
 
 echo ""
-log_warn "CIBLE : ${USB_DEVICE}"
+log_warn "CIBLE  : ${USB_DEVICE}"
 log_warn "SOURCE : ${OUTPUT_PATH}"
 echo ""
-printf "${RED}${BOLD}  CONFIRMER l'écriture ? Tout le contenu sera perdu. [oui/NON] : ${NC}"
+printf "${RED}${BOLD}  CONFIRMER ? Tout le contenu sera perdu. [oui/NON] : ${NC}"
 read -r confirm
 [[ "${confirm}" == "oui" ]] || { log_info "Annulé."; exit 0; }
 
 if [[ "${OS_TYPE}" == "macos" ]]; then
   log_info "Démontage de ${USB_DEVICE}..."
-  diskutil unmountDisk "${USB_DEVICE}" || true
-  log_info "Écriture en cours (sudo dd)..."
-  sudo dd if="${OUTPUT_PATH}" of="${USB_RAW}" bs=1m status=progress
+  diskutil unmountDisk "${USB_DEVICE}"
+  log_info "Écriture (peut prendre 5-15 min selon la clé)..."
+  sudo dd if="${OUTPUT_PATH}" of="${USB_RAW}" bs=1m
+  sync
   diskutil eject "${USB_DEVICE}"
 else
-  log_info "Écriture en cours (sudo dd)..."
+  log_info "Écriture (peut prendre 5-15 min selon la clé)..."
   sudo dd if="${OUTPUT_PATH}" of="${USB_RAW}" bs=4M status=progress oflag=sync
   sync
 fi
 
-log_ok "Clé USB prête."
-echo ""
-echo "  Insérer la clé USB dans la machine cible."
-echo "  Démarrer en sélectionnant la clé dans le boot menu (F12/F2/DEL)."
-echo "  L'installation démarre automatiquement (~10-20 min)."
+printf "\n${GREEN}${BOLD}  ✓ Clé USB prête !${NC}\n\n"
+echo "  1. Insérer la clé dans la machine cible"
+echo "  2. Démarrer depuis la clé (F12 / F2 / DEL selon BIOS/UEFI)"
+echo "  3. L'installation démarre automatiquement (~10-20 min)"
+echo "  4. La machine redémarre et est prête"
