@@ -115,18 +115,23 @@ if [[ -f "${REPO_DIR}/configs/ghostty/config" ]]; then
   log_ok "Config Ghostty déployée"
 fi
 
-# ── 6. Brave browser ──────────────────────────────────────────────────────────
-log_section "Brave Browser"
-if ! command -v brave-browser &>/dev/null; then
+# ── Brave Origin (version minimaliste, gratuite sur Linux) ───────────────────
+log_section "Brave Origin"
+if ! command -v brave-origin &>/dev/null; then
   curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
     https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
-  echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] \
-https://brave-browser-apt-release.s3.brave.com/ stable main" \
-    | tee /etc/apt/sources.list.d/brave-browser-release.list >/dev/null
-  apt update -q && apt install -y brave-browser \
-    && log_ok "Brave installé" || log_error "Brave install"
+  curl -fsSLo /etc/apt/sources.list.d/brave-browser.sources \
+    https://brave-browser-apt-release.s3.brave.com/brave-browser.sources
+  apt update -q
+  if apt install -y brave-origin 2>>"${LOG_FILE}"; then
+    log_ok "Brave Origin installé (sans Leo/Rewards/VPN/Wallet — gratuit sur Linux)"
+  elif apt install -y brave-browser 2>>"${LOG_FILE}"; then
+    log_ok "Brave standard installé (brave-origin absent du repo — fallback)"
+  else
+    log_error "Brave install (origin + fallback) FAILED"
+  fi
 else
-  log_ok "Brave déjà présent"
+  log_ok "Brave Origin déjà présent"
 fi
 
 # ── 7. Neovim (depuis source) ─────────────────────────────────────────────────
