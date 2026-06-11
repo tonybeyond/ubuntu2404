@@ -120,9 +120,11 @@ log_ok "Niri compilé"
 
 # ── 4. Installation des binaires + fichiers de session ───────────────────────
 log_section "Installation"
-sudo cp target/release/niri /usr/local/bin/
-sudo cp resources/niri-session /usr/local/bin/ 2>/dev/null || true
-sudo chmod +x /usr/local/bin/niri /usr/local/bin/niri-session 2>/dev/null || true
+# install (et non cp) : unlink d'abord → fonctionne même si Niri tourne
+# (cp échoue avec "Text file busy" depuis une session Niri active)
+sudo install -m755 target/release/niri /usr/local/bin/niri
+[[ -f resources/niri-session ]] \
+  && sudo install -m755 resources/niri-session /usr/local/bin/niri-session
 
 # niri.desktop : session GDM/SDDM
 sudo mkdir -p /usr/share/wayland-sessions
@@ -343,7 +345,12 @@ echo ""
 printf "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗\n"
 printf "║  Niri installé ✓                                 ║\n"
 printf "╠══════════════════════════════════════════════════╣\n"
-printf "║  1. Redémarrer : sudo reboot                     ║\n"
+if pgrep -x niri >/dev/null; then
+  printf "║  ⚠ Session Niri active : le binaire est remplacé ║\n"
+  printf "║    sur disque — relogin pour utiliser la nouvelle ║\n"
+  printf "║    version.                                       ║\n"
+fi
+printf "║  1. Redémarrer : sudo reboot (ou relogin)        ║\n"
 printf "║  2. Écran de login → sélectionner session Niri   ║\n"
 printf "╠══════════════════════════════════════════════════╣\n"
 printf "║  Keybinds :                                      ║\n"
