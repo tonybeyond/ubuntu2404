@@ -30,7 +30,7 @@ PKGS=(
   libwayland-dev libxkbcommon-dev libgbm-dev libinput-dev libudev-dev
   libseat-dev libdisplay-info-dev libpango1.0-dev libglib2.0-dev libxml2-dev
   libpipewire-0.3-dev libspa-0.2-dev libdbus-1-dev libsystemd-dev libegl1-mesa-dev
-  xdg-desktop-portal-gtk
+  xdg-desktop-portal-gtk xwayland
   waybar fuzzel swaybg sway-notification-center
   pavucontrol fonts-noto-color-emoji
 )
@@ -57,6 +57,33 @@ fi
 
 [[ ${#FAILED_PKGS[@]} -eq 0 ]] && log_ok "Toutes les dépendances installées" \
   || log_warn "Paquets manquants : ${FAILED_PKGS[*]}"
+
+# ── xwayland-satellite : OBLIGATOIRE pour les apps X11 (Citrix, etc.) ─────────
+# Niri n'embarque pas XWayland — sans satellite, aucune app X11 ne se lance.
+# Niri >= 25.08 le détecte et le lance automatiquement s'il est dans le PATH.
+log_section "xwayland-satellite (support apps X11 : Citrix...)"
+if command -v xwayland-satellite &>/dev/null; then
+  log_ok "xwayland-satellite déjà présent"
+elif sudo apt install -y xwayland-satellite &>/dev/null; then
+  log_ok "xwayland-satellite installé (apt)"
+else
+  log_info "Paquet apt absent — build cargo (~5 min)..."
+  # Dépendances de build
+  for p in libxcb1-dev libxcb-cursor-dev libxcb-res0-dev; do
+    sudo apt install -y "$p" &>/dev/null || true
+  done
+  # shellcheck disable=SC1091
+  source "${HOME}/.cargo/env" 2>/dev/null || true
+  if command -v cargo &>/dev/null; then
+    cargo install --git https://github.com/Supreeeme/xwayland-satellite \
+      --locked 2>/dev/null \
+      && sudo cp "${HOME}/.cargo/bin/xwayland-satellite" /usr/local/bin/ \
+      && log_ok "xwayland-satellite buildé → /usr/local/bin" \
+      || log_warn "Build xwayland-satellite échoué — les apps X11 (Citrix) ne marcheront pas dans Niri"
+  else
+    log_warn "cargo absent à ce stade — relancer le script après l'étape Rust"
+  fi
+fi
 
 # ── 2. Rust ───────────────────────────────────────────────────────────────────
 log_section "Rust toolchain"
@@ -164,9 +191,10 @@ layout {
     }
 }
 
-spawn-at-startup "waybar"
-spawn-at-startup "swaync"
-spawn-at-startup "swaybg" "-c" "#1e1e2e"
+// Guards pgrep : évite les doublons si une unit systemd lance déjà ces services
+spawn-at-startup "sh" "-c" "pgrep -x waybar || exec waybar"
+spawn-at-startup "sh" "-c" "pgrep -x swaync || exec swaync"
+spawn-at-startup "sh" "-c" "pgrep -x swaybg || exec swaybg -c '#1e1e2e'"
 
 binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
@@ -281,6 +309,12 @@ border=cba6f7ff
 INI
 
 log_ok "Configs Niri, Waybar, Fuzzel générées"
+
+# Masquer les units systemd user waybar/swaync : elles seraient lancées par
+# graphical-session.target en plus de notre spawn-at-startup → barre en double
+systemctl --user mask waybar.service 2>/dev/null || true
+systemctl --user mask sway-notification-center.service 2>/dev/null || true
+log_ok "Units systemd waybar/swaync masquées (anti-doublon)"
 
 # ── 6. Validation de la config ────────────────────────────────────────────────
 log_section "Validation"
