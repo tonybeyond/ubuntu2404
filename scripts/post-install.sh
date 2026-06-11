@@ -321,6 +321,39 @@ BASHRC_BLOCK
   log_ok ".bashrc patché"
 fi
 
+# ── Shadow PC (cloud gaming/workstation) ─────────────────────────────────────
+log_section "Shadow PC"
+if ! is_installed shadow-prod && ! command -v shadow-prod &>/dev/null; then
+  # Dépendances vidéo (VA-API/VDPAU) requises par le client
+  apt_install libva-glx2 libvdpau1 libva-drm2 libcurl4 libva-wayland2
+
+  SHADOW_DEB="/tmp/shadow-amd64.deb"
+  if curl -fL --connect-timeout 15 -o "${SHADOW_DEB}" \
+      "https://update.shadow.tech/launcher/prod/linux/x86_64/shadow-amd64.deb" 2>>"${LOG_FILE}"; then
+    apt install -y "${SHADOW_DEB}" 2>>"${LOG_FILE}" \
+      && log_ok "Shadow PC installé" \
+      || log_error "Shadow PC dpkg failed"
+    rm -f "${SHADOW_DEB}"
+
+    # Groupe input requis pour la capture clavier/souris
+    usermod -a -G input "${TARGET_USER}" \
+      && log_ok "User ${TARGET_USER} ajouté au groupe input"
+
+    # Support Wayland : module uinput + règle udev + groupe shadow-input
+    echo "uinput" > /etc/modules-load.d/uinput.conf
+    groupadd -f shadow-input
+    cat > /etc/udev/rules.d/65-shadow-client.rules << 'UDEV'
+KERNEL=="uinput", MODE="0660", GROUP="shadow-input"
+UDEV
+    usermod -a -G shadow-input "${TARGET_USER}"
+    log_ok "Config Wayland (uinput + udev) appliquée — effective après reboot"
+  else
+    log_error "Shadow PC download failed — installer manuellement depuis shadow.tech/download"
+  fi
+else
+  log_ok "Shadow PC déjà présent"
+fi
+
 # ── 10. Citrix Workspace ──────────────────────────────────────────────────────
 log_section "Citrix Workspace"
 if [[ -x "${REPO_DIR}/scripts/citrix-setup.sh" ]]; then
