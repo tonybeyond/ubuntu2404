@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# niri-setup.sh — Niri (Wayland compositor) + environnement complet
-# Basé sur niri2.sh — mise à jour Brave + robustesse
-# Build depuis source (~20 min). Lancer en tant qu'utilisateur normal.
+# niri-setup.sh — Niri (Wayland compositor) + Waybar + Fuzzel
+# Compatible : Ubuntu 24.04 + Debian 13 Trixie (et RefreshOS 3)
+# Build depuis source, dernier tag stable (~15-20 min).
+# Lancer en tant qu'utilisateur normal (PAS sudo).
 # =============================================================================
 
 set -euo pipefail
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; RED='\033[0;31m'
-BOLD='\033[1m'; NC='\033[0m'
+YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
 
 log_info()    { printf "${BLUE}  ·${NC}  %s\n" "$*"; }
 log_ok()      { printf "${GREEN}  ✓${NC}  %s\n" "$*"; }
+log_warn()    { printf "${YELLOW}  ⚠${NC}  %s\n" "$*"; }
 log_error()   { printf "${RED}  ✗${NC}  %s\n" "$*" >&2; }
 log_section() { printf "\n${BOLD}── %s ──${NC}\n" "$*"; }
 
@@ -19,63 +21,116 @@ log_section() { printf "\n${BOLD}── %s ──${NC}\n" "$*"; }
 
 # ── 1. Dépendances système ────────────────────────────────────────────────────
 log_section "Dépendances système"
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y \
-  build-essential git curl wget pkg-config unzip clang \
-  libwayland-dev libxkbcommon-dev libgbm-dev libinput-dev libudev-dev \
-  libseat-dev libdisplay-info-dev libpango1.0-dev libglib2.0-dev libxml2-dev \
-  libpipewire-0.3-dev libspa-0.2-dev libdbus-1-dev libsystemd-dev libegl1-mesa-dev \
-  xdg-desktop-portal-gnome policykit-1-gnome \
-  waybar fuzzel swaybg sway-notification-center \
-  fonts-noto-color-emoji
-log_ok "Dépendances installées"
+sudo apt update
+
+# Installation paquet par paquet : un paquet manquant ne bloque pas le reste
+# (ex: policykit-1-gnome retiré de Debian Trixie)
+PKGS=(
+  build-essential git curl wget pkg-config unzip clang
+  libwayland-dev libxkbcommon-dev libgbm-dev libinput-dev libudev-dev
+  libseat-dev libdisplay-info-dev libpango1.0-dev libglib2.0-dev libxml2-dev
+  libpipewire-0.3-dev libspa-0.2-dev libdbus-1-dev libsystemd-dev libegl1-mesa-dev
+  xdg-desktop-portal-gtk
+  waybar fuzzel swaybg sway-notification-center
+  pavucontrol fonts-noto-color-emoji
+)
+FAILED_PKGS=()
+for pkg in "${PKGS[@]}"; do
+  if dpkg -s "$pkg" &>/dev/null; then
+    continue
+  elif sudo apt install -y "$pkg" &>/dev/null; then
+    log_ok "apt: $pkg"
+  else
+    log_warn "apt: $pkg indisponible — skipped"
+    FAILED_PKGS+=("$pkg")
+  fi
+done
+
+# Polkit agent : policykit-1-gnome (Ubuntu) retiré de Debian Trixie → mate-polkit
+if sudo apt install -y policykit-1-gnome &>/dev/null; then
+  log_ok "Polkit agent : policykit-1-gnome"
+elif sudo apt install -y mate-polkit &>/dev/null; then
+  log_ok "Polkit agent : mate-polkit (Trixie)"
+else
+  log_warn "Aucun polkit agent installé — l'élévation GUI ne fonctionnera pas dans Niri"
+fi
+
+[[ ${#FAILED_PKGS[@]} -eq 0 ]] && log_ok "Toutes les dépendances installées" \
+  || log_warn "Paquets manquants : ${FAILED_PKGS[*]}"
 
 # ── 2. Rust ───────────────────────────────────────────────────────────────────
 log_section "Rust toolchain"
-if ! command -v cargo &>/dev/null; then
+if ! command -v cargo &>/dev/null && [[ ! -f "${HOME}/.cargo/env" ]]; then
   log_info "Installation de Rust via rustup..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  source "${HOME}/.cargo/env"
   log_ok "Rust installé"
-else
-  log_ok "Rust $(rustc --version) déjà présent"
-  rustup update stable
 fi
+# shellcheck disable=SC1091
+source "${HOME}/.cargo/env" 2>/dev/null || true
+command -v cargo &>/dev/null || { log_error "cargo introuvable après install Rust"; exit 1; }
+log_ok "Rust : $(rustc --version)"
 
-# ── 3. Build Niri ─────────────────────────────────────────────────────────────
+# ── 3. Build Niri (dernier tag stable, pas main) ──────────────────────────────
 log_section "Build Niri depuis source (~15-20 min)"
 if [[ ! -d "${HOME}/niri-src" ]]; then
   git clone https://github.com/YaLTeR/niri.git "${HOME}/niri-src"
 fi
 cd "${HOME}/niri-src"
-git pull
-source "${HOME}/.cargo/env"
+git fetch --tags
+
+# Checkout du dernier tag stable — main peut être cassé
+LATEST_TAG=$(git tag --sort=-version:refname | head -n1)
+if [[ -n "${LATEST_TAG}" ]]; then
+  git checkout "${LATEST_TAG}" 2>/dev/null
+  log_ok "Version : ${LATEST_TAG} (dernier tag stable)"
+else
+  log_warn "Aucun tag trouvé — build depuis main"
+  git pull
+fi
+
 cargo build --release
 log_ok "Niri compilé"
 
-# Installer les binaires et fichiers de session
+# ── 4. Installation des binaires + fichiers de session ───────────────────────
+log_section "Installation"
 sudo cp target/release/niri /usr/local/bin/
-sudo cp resources/niri.desktop /usr/share/wayland-sessions/ 2>/dev/null || true
 sudo cp resources/niri-session /usr/local/bin/ 2>/dev/null || true
-sudo cp resources/niri.service /usr/lib/systemd/user/ 2>/dev/null || true
+sudo chmod +x /usr/local/bin/niri /usr/local/bin/niri-session 2>/dev/null || true
+
+# niri.desktop : session GDM/SDDM
+sudo mkdir -p /usr/share/wayland-sessions
+sudo cp resources/niri.desktop /usr/share/wayland-sessions/ 2>/dev/null || true
+
+# ⚠ FIX CRITIQUE : niri.service upstream pointe /usr/bin/niri
+# mais on installe dans /usr/local/bin → la session échouerait au démarrage
+sudo mkdir -p /usr/lib/systemd/user
+if [[ -f resources/niri.service ]]; then
+  sed 's|/usr/bin/niri|/usr/local/bin/niri|g' resources/niri.service \
+    | sudo tee /usr/lib/systemd/user/niri.service >/dev/null
+  log_ok "niri.service installé (ExecStart corrigé → /usr/local/bin)"
+fi
 sudo cp resources/niri-shutdown.target /usr/lib/systemd/user/ 2>/dev/null || true
-sudo chmod +x /usr/local/bin/niri*
 systemctl --user daemon-reload 2>/dev/null || true
 log_ok "Niri installé → /usr/local/bin/niri"
 
-# ── 4. Configs ────────────────────────────────────────────────────────────────
-log_section "Configuration Niri + Waybar"
+# ── 5. Configs ────────────────────────────────────────────────────────────────
+log_section "Configuration Niri + Waybar + Fuzzel"
 
 NIRI_DIR="${HOME}/.config/niri"
 WAYBAR_DIR="${HOME}/.config/waybar"
 FUZZEL_DIR="${HOME}/.config/fuzzel"
-SWAYNC_DIR="${HOME}/.config/swaync"
-mkdir -p "${NIRI_DIR}" "${WAYBAR_DIR}" "${FUZZEL_DIR}" "${SWAYNC_DIR}"
+mkdir -p "${NIRI_DIR}" "${WAYBAR_DIR}" "${FUZZEL_DIR}"
+
+# Backup d'une config existante
+[[ -f "${NIRI_DIR}/config.kdl" ]] \
+  && cp "${NIRI_DIR}/config.kdl" "${NIRI_DIR}/config.kdl.bak-$(date +%Y%m%d-%H%M%S)"
 
 # ── niri/config.kdl ──────────────────────────────────────────────────────────
+# Syntaxe KDL valide : nodes terminés par ; ou newline.
+# border : la présence de la section l'active (pas de node "on").
 cat > "${NIRI_DIR}/config.kdl" << 'KDL'
-// Niri — Tony's config
-// Clavier ch/fr · Super+HJKL navigation · Ghostty · Brave
+// Niri — config générée par niri-setup.sh
+// Clavier ch/fr · Super+HJKL · Ghostty · Brave · Catppuccin Mocha
 
 input {
     keyboard {
@@ -99,16 +154,16 @@ layout {
         proportion 0.66667
     }
     default-column-width { proportion 0.5; }
-    focus-ring { off }
+    focus-ring {
+        off
+    }
     border {
-        on
         width 2
         active-gradient from="#89b4fa" to="#cba6f7" angle=45
         inactive-color "#585b70"
     }
 }
 
-// Démarrage automatique
 spawn-at-startup "waybar"
 spawn-at-startup "swaync"
 spawn-at-startup "swaybg" "-c" "#1e1e2e"
@@ -138,7 +193,12 @@ binds {
     Mod+Shift+J { move-window-down; }
     Mod+Shift+K { move-window-up; }
 
-    // Scroll infini
+    // Largeur de colonne
+    Mod+R     { switch-preset-column-width; }
+    Mod+F     { maximize-column; }
+    Mod+Shift+F { fullscreen-window; }
+
+    // Scroll
     Mod+WheelScrollDown { focus-column-right; }
     Mod+WheelScrollUp   { focus-column-left; }
 }
@@ -222,18 +282,29 @@ INI
 
 log_ok "Configs Niri, Waybar, Fuzzel générées"
 
-# ── 5. Résumé ─────────────────────────────────────────────────────────────────
+# ── 6. Validation de la config ────────────────────────────────────────────────
+log_section "Validation"
+if /usr/local/bin/niri validate 2>/dev/null; then
+  log_ok "config.kdl valide (niri validate)"
+else
+  log_warn "niri validate a signalé un problème — vérifier ~/.config/niri/config.kdl"
+  /usr/local/bin/niri validate || true
+fi
+
+# ── 7. Résumé ─────────────────────────────────────────────────────────────────
 echo ""
 printf "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗\n"
 printf "║  Niri installé ✓                                 ║\n"
 printf "╠══════════════════════════════════════════════════╣\n"
 printf "║  1. Redémarrer : sudo reboot                     ║\n"
-printf "║  2. Login → icône engrenage → sélectionner Niri  ║\n"
+printf "║  2. Écran de login → sélectionner session Niri   ║\n"
 printf "╠══════════════════════════════════════════════════╣\n"
 printf "║  Keybinds :                                      ║\n"
 printf "║  Super+Enter  Terminal (Ghostty)                 ║\n"
 printf "║  Super+Space  Launcher (Fuzzel)                  ║\n"
 printf "║  Super+W      Navigateur (Brave)                 ║\n"
 printf "║  Super+HJKL   Navigation Vim                     ║\n"
+printf "║  Super+R      Cycle largeur colonne              ║\n"
 printf "║  Super+Q      Fermer fenêtre                     ║\n"
+printf "║  Super+Shift+/  Aide raccourcis                  ║\n"
 printf "╚══════════════════════════════════════════════════╝${NC}\n"
