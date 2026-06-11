@@ -202,24 +202,37 @@ binds {
     // Applications
     Mod+Return { spawn "ghostty"; }
     Mod+Space  { spawn "fuzzel"; }
-    Mod+W      { spawn "brave-browser"; }
+    // Brave Origin si installé, sinon Brave standard
+    Mod+W      { spawn "sh" "-c" "exec $(command -v brave-origin || command -v brave-browser)"; }
     Print      { screenshot; }
 
     // Session
     Mod+Q       { close-window; }
     Mod+Shift+E { quit; }
 
-    // Navigation Vim
+    // Navigation Vim (HJKL)
     Mod+H { focus-column-left; }
     Mod+L { focus-column-right; }
     Mod+J { focus-window-down; }
     Mod+K { focus-window-up; }
 
-    // Déplacement
+    // Navigation flèches
+    Mod+Left  { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Down  { focus-window-down; }
+    Mod+Up    { focus-window-up; }
+
+    // Déplacement Vim (HJKL)
     Mod+Shift+H { move-column-left; }
     Mod+Shift+L { move-column-right; }
     Mod+Shift+J { move-window-down; }
     Mod+Shift+K { move-window-up; }
+
+    // Déplacement flèches
+    Mod+Shift+Left  { move-column-left; }
+    Mod+Shift+Right { move-column-right; }
+    Mod+Shift+Down  { move-window-down; }
+    Mod+Shift+Up    { move-window-up; }
 
     // Largeur de colonne
     Mod+R     { switch-preset-column-width; }
@@ -337,7 +350,7 @@ printf "║  Keybinds :                                      ║\n"
 printf "║  Super+Enter  Terminal (Ghostty)                 ║\n"
 printf "║  Super+Space  Launcher (Fuzzel)                  ║\n"
 printf "║  Super+W      Navigateur (Brave)                 ║\n"
-printf "║  Super+HJKL   Navigation Vim                     ║\n"
+printf "║  Super+HJKL ou flèches   Navigation              ║\n"
 printf "║  Super+R      Cycle largeur colonne              ║\n"
 printf "║  Super+Q      Fermer fenêtre                     ║\n"
 printf "║  Super+Shift+/  Aide raccourcis                  ║\n"
