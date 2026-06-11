@@ -241,6 +241,21 @@ binds {
     Mod+F     { maximize-column; }
     Mod+Shift+F { fullscreen-window; }
 
+    // Workspaces (empilés verticalement dans Niri)
+    Mod+Page_Down       { focus-workspace-down; }
+    Mod+Page_Up         { focus-workspace-up; }
+    Mod+U               { focus-workspace-down; }
+    Mod+I               { focus-workspace-up; }
+    Mod+Shift+Page_Down { move-column-to-workspace-down; }
+    Mod+Shift+Page_Up   { move-column-to-workspace-up; }
+    Mod+Shift+U         { move-column-to-workspace-down; }
+    Mod+Shift+I         { move-column-to-workspace-up; }
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+
     // Scroll
     Mod+WheelScrollDown { focus-column-right; }
     Mod+WheelScrollUp   { focus-column-left; }
@@ -258,11 +273,12 @@ cat > "${WAYBAR_DIR}/config" << 'JSON'
     "margin-right": 10,
     "modules-left": ["niri/workspaces"],
     "modules-center": ["clock"],
-    "modules-right": ["cpu", "memory", "pulseaudio", "battery", "custom/notification"],
+    "modules-right": ["tray", "cpu", "memory", "pulseaudio", "battery", "custom/notification"],
     "niri/workspaces": {
         "format": "{icon}",
-        "format-icons": { "default": "", "active": "" }
+        "format-icons": { "default": "○", "active": "●" }
     },
+    "tray": { "icon-size": 16, "spacing": 8 },
     "clock":   { "format": "{:%H:%M  %a %d %b}" },
     "cpu":     { "format": " {usage}%", "interval": 5 },
     "memory":  { "format": " {}%",     "interval": 10 },
@@ -298,9 +314,19 @@ window#waybar { background: transparent; }
 #memory    { color: #a6e3a1; }
 #pulseaudio{ color: #f9e2af; }
 #battery   { color: #fab387; }
-#workspaces button         { color: #585b70; padding: 0 6px; }
-#workspaces button.active  { color: #cba6f7; }
-#workspaces button:hover   { background: #313244; }
+#tray { padding: 0 6px; }
+#workspaces button {
+    color: #7f849c;
+    padding: 0 8px;
+    font-size: 15px;
+}
+#workspaces button.active {
+    color: #1e1e2e;
+    background: #cba6f7;
+    border-radius: 8px;
+    padding: 0 10px;
+}
+#workspaces button:hover { background: #313244; color: #cdd6f4; }
 CSS
 
 # ── fuzzel/fuzzel.ini ─────────────────────────────────────────────────────────
@@ -358,6 +384,8 @@ printf "║  Super+Enter  Terminal (Ghostty)                 ║\n"
 printf "║  Super+Space  Launcher (Fuzzel)                  ║\n"
 printf "║  Super+W      Navigateur (Brave)                 ║\n"
 printf "║  Super+HJKL ou flèches   Navigation              ║\n"
+printf "║  Super+U/I ou PgDn/PgUp   Workspace bas/haut     ║\n"
+printf "║  Super+1..5   Workspace direct                   ║\n"
 printf "║  Super+R      Cycle largeur colonne              ║\n"
 printf "║  Super+Q      Fermer fenêtre                     ║\n"
 printf "║  Super+Shift+/  Aide raccourcis                  ║\n"
