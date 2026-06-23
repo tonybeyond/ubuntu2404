@@ -1,0 +1,11 @@
+{
+  "ollama-remote": {
+    "display:name": "Ollama",
+    "ai:provider": "custom",
+    "ai:apitype": "openai-chat",
+    "ai:model": "deepseek-v4-flash:cloud",
+    "ai:endpoint": "http://10.11.12.122:11434/v1/chat/completions",
+    "ai:apitoken": "ollama",
+    "ai:capabilities": ["tools"]
+  }
+}
