@@ -298,6 +298,7 @@ binds {
     // ─ Layout ─
     Mod+R       { switch-preset-column-width; }
     Mod+Ctrl+F  { expand-column-to-available-width; }
+    Mod+M      { expand-column-to-available-width; } // alias Maximize
     Mod+C       { center-column; }
     Mod+Ctrl+C  { center-visible-columns; }
     Mod+Minus       { set-column-width "-10%"; }
