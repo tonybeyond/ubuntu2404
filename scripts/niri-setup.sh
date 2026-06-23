@@ -3,7 +3,7 @@
 # niri-setup.sh — Niri (Wayland) façon CachyOS, adapté Debian 13 Trixie
 # =============================================================================
 # Réplique la configuration CachyOS (cachyos-niri-settings) avec adaptations :
-#   ghostty (alacritty), brave-origin (firefox), fuzzel (wofi), swaybg (swww),
+#   waveterm, brave-origin (firefox), fuzzel (wofi), swaybg (swww),
 #   Catppuccin Mocha (Nord), swaync (mako).
 # Sources : github.com/CachyOS/cachyos-niri-settings
 #           wiki.cachyos.org/configuration/desktop_environments/niri/
@@ -147,7 +147,7 @@ done
 cat > "${NIRI_DIR}/config.kdl" << KDLEOF
 // Niri — style CachyOS (cachyos-niri-settings), adapté Debian 13 Trixie
 // Ref: github.com/CachyOS/cachyos-niri-settings
-// Clavier : ch/fr | Terminal : ghostty | Browser : brave-origin | Launcher : fuzzel
+// Clavier : ch/fr | Terminal : waveterm | Browser : brave-origin | Launcher : fuzzel
 
 // ────────────── Input ──────────────────────────────────────────────────────────
 input {
@@ -179,8 +179,8 @@ binds {
     Mod+Shift+Escape { show-hotkey-overlay; }
 
     // ─ Applications ─
-    Mod+Return hotkey-overlay-title="Terminal : ghostty" {
-        spawn "ghostty";
+    Mod+Return hotkey-overlay-title="Terminal : waveterm" {
+        spawn "waveterm";
     }
     Mod+Space hotkey-overlay-title="Launcher : fuzzel" {
         spawn "fuzzel";
@@ -653,7 +653,7 @@ cat > "${FUZZEL_DIR}/fuzzel.ini" << 'EOF'
 [main]
 font=Hack Nerd Font Mono:size=13
 prompt=❯ 
-terminal=ghostty
+terminal=waveterm
 width=42
 horizontal-pad=40
 vertical-pad=20
@@ -692,7 +692,7 @@ printf "╠═══════════════════════
 printf "║  1. sudo reboot (ou relogin → sélectionner Niri)         ║\n"
 printf "╠══════════════════════════════════════════════════════════╣\n"
 printf "║  Keybinds principaux :                                   ║\n"
-printf "║  Super+Enter      Terminal (Ghostty)                     ║\n"
+printf "║  Super+Enter      Terminal (WaveTerm)                    ║\n"
 printf "║  Super+Space      Launcher (Fuzzel)                      ║\n"
 printf "║  Super+B          Brave browser                          ║\n"
 printf "║  Super+HJKL/↑↓←→  Navigation                            ║\n"
