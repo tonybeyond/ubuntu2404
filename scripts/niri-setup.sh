@@ -325,7 +325,7 @@ binds {
 }
 
 // ────────────── Démarrage ──────────────────────────────────────────────────────
-spawn-at-startup "xwayland-satellite"
+spawn-at-startup "xwayland-satellite" ":1" // display explicite → cohérent avec DISPLAY ":1"
 spawn-at-startup "swaync"
 spawn-at-startup "sh" "-c" "pgrep -x waybar || exec waybar"
 spawn-at-startup "swaybg" "-c" "#1e1e2e"
