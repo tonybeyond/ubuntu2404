@@ -1,0 +1,11 @@
+{
+  "root@ollama": {
+    "ssh:hostname": "10.11.12.122",
+    "ssh:port": "22",
+    "ssh:identityfile": [
+      "~/.ssh/id_ed25519"
+    ],
+    "ssh:identitiesonly": true,
+    "term:theme": "warmyellow"
+  }
+}
