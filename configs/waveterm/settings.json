@@ -1,0 +1,7 @@
+{
+  "autoupdate:channel": "latest",
+  "term:fontsize": 14,
+  "term:theme": "dracula",
+  "waveai:defaultmode": "ollama-remote",
+  "waveai:showcloudmodes": false
+}
